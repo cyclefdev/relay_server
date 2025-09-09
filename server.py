@@ -23,11 +23,14 @@ def handle_disconnect():
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.form.to_dict() or request.json
-    print("Got data from phone:", data)
+    if not data:
+        return "No data received", 400
+
     # Forward to all connected devices
     for sid in clients:
         socketio.emit("data_from_app", data, to=sid)
-    return "Forwarded", 200
+
+    return "Data forwarded", 200
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5000)
