@@ -1,5 +1,7 @@
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 from flask_socketio import SocketIO, emit
+import os
+import uuid
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -22,13 +24,22 @@ def handle_disconnect():
 # Phones send data via POST
 @app.route("/submit", methods=["POST"])
 def submit():
-    data = request.form.to_dict() or request.json
-    if not data:
-        return "No data received", 400
+    phone_id = request.form.get('phone_id')
+    if not phone_id:
+        return "Phone ID is required", 400
 
-    # Forward to all connected devices
+    # Forward text and JSON data
+    data = {k: v for k, v in request.form.items() if k != "media"}
+    data.update(request.json or {})
     for sid in clients:
         socketio.emit("data_from_app", data, to=sid)
+
+    # Handle file uploads
+    if "media" in request.files:
+        file = request.files["media"]
+        filename = f"{phone_id}_{file.filename}"
+        for sid in clients:
+            socketio.emit("file_from_app", {"filename": filename, "data": file.read()}, to=sid)
 
     return "Data forwarded", 200
 
