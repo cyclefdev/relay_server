@@ -1,55 +1,26 @@
-from flask import Flask, request
-from flask_socketio import SocketIO
-import base64
-import os
+from flask import Flask, request, jsonify
+import requests
 
-# Initialize Flask + SocketIO
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Keep track of connected Linux clients
-linux_clients = []
+# Replace with your LAN machine IP
+LAN_MACHINE_URL = "http://10.0.2.15:5001/store_data"
 
-# Handle WebSocket connections from Linux client(s)
-@socketio.on("connect")
-def on_connect():
-    linux_clients.append(request.sid)
-    print(f"Linux connected: {request.sid}")
-
-@socketio.on("disconnect")
-def on_disconnect():
-    if request.sid in linux_clients:
-        linux_clients.remove(request.sid)
-    print(f"Linux disconnected: {request.sid}")
-
-# HTTP endpoint where Android app POSTs data
 @app.route("/submit", methods=["POST"])
 def submit():
-    phone_id = request.form.get("phone_id")
-    if not phone_id:
-        return "Missing phone_id", 400
+    try:
+        # Forward files if present
+        files = {"media": request.files["media"]} if "media" in request.files else None
+        data = request.form.to_dict()
 
-    # Extract metadata except the file
-    data = {k: v for k, v in request.form.items() if k != "media"}
+        resp = requests.post(LAN_MACHINE_URL, data=data, files=files)
 
-    # Forward metadata to Linux client(s)
-    for client in linux_clients:
-        socketio.emit("data_from_app", {"phone_id": phone_id, "data": data}, to=client)
+        if resp.status_code == 200:
+            return jsonify({"message": "Relayed to LAN machine successfully"}), 200
+        else:
+            return jsonify({"error": "Failed to relay"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    # Forward file (if any) to Linux client(s)
-    if "media" in request.files:
-        file = request.files["media"]
-        b64_data = base64.b64encode(file.read()).decode("utf-8")
-        for client in linux_clients:
-            socketio.emit("file_from_app", {
-                "phone_id": phone_id,
-                "filename": file.filename,
-                "data": b64_data
-            }, to=client)
-
-    return "OK", 200
-
-# Run app (Railway requires dynamic port binding)
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Railway sets $PORT
-    socketio.run(app, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
