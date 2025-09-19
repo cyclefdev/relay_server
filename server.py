@@ -1,37 +1,42 @@
-from flask import Flask, request, jsonify
 import os
-import json
+from flask import Flask, request, jsonify
+from flask_socketio import SocketIO, emit
+from threading import Thread
 
 app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Directory to store all phone data
-LOCAL_STORAGE_DIR = "/home/saad/phone_data"
-os.makedirs(LOCAL_STORAGE_DIR, exist_ok=True)
+# Keep track of connected LAN clients
+lan_clients = []
 
-@app.route("/store_data", methods=["POST"])
-def store_data():
-    phone_id = request.form.get("phone_id")
-    if not phone_id:
-        return jsonify({"error": "phone_id required"}), 400
+@app.route("/submit", methods=["POST"])
+def submit():
+    data = request.form.to_dict()
+    file_content = None
 
-    # Create a folder for this phone_id
-    phone_dir = os.path.join(LOCAL_STORAGE_DIR, phone_id)
-    os.makedirs(phone_dir, exist_ok=True)
-
-    # Store form data except media
-    form_data = {k: v for k, v in request.form.items() if k != "media"}
-    form_path = os.path.join(phone_dir, "form.json")
-    with open(form_path, "w", encoding="utf-8") as f:
-        json.dump(form_data, f, indent=2, ensure_ascii=False)
-
-    # Store uploaded media
     if "media" in request.files:
         media_file = request.files["media"]
+        file_content = media_file.read()
         filename = media_file.filename or "unknown_file"
-        media_file.save(os.path.join(phone_dir, filename))
+        data["media_filename"] = filename
 
-    return jsonify({"message": "Stored on Linux machine successfully"}), 200
+    # Relay to all connected LAN clients
+    for client in lan_clients:
+        client.emit("data", {"form": data, "media": file_content})
+
+    return jsonify({"message": "Relayed to LAN clients"}), 200
+
+@socketio.on("connect")
+def handle_connect():
+    lan_clients.append(request.namespace)
+    print(f"LAN client connected. Total: {len(lan_clients)}")
+
+@socketio.on("disconnect")
+def handle_disconnect():
+    if request.namespace in lan_clients:
+        lan_clients.remove(request.namespace)
+    print(f"LAN client disconnected. Total: {len(lan_clients)}")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port)
