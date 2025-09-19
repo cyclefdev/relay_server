@@ -21,7 +21,6 @@ def submit():
         return jsonify({"message": "Data received. LAN machine offline."}), 200
 
 if __name__ == "__main__":
-    # LOCAL DEV: 5000, RAILWAY: use dynamic PORT
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))  # Railway PORT, fallback 5000 locally
     print(f"Server starting on port {port}")
     app.run(host="0.0.0.0", port=port)
