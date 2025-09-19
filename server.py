@@ -1,9 +1,10 @@
+import os
 from flask import Flask, request, jsonify
 import requests
 
 app = Flask(__name__)
 
-# Updated to use port 5000 for LAN machine as well
+# Your LAN machine, still on port 5000
 LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
 
 @app.route("/submit", methods=["POST"])
@@ -24,5 +25,6 @@ def submit():
 
 
 if __name__ == "__main__":
-    # Force listening on port 5000
-    app.run(host="0.0.0.0", port=5000)
+    # Railway provides PORT in env vars, fallback to 5000 locally
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
