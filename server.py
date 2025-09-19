@@ -18,10 +18,8 @@ def submit():
         else:
             return jsonify({"warning": "LAN relay failed", "status": resp.status_code}), 200
     except requests.exceptions.RequestException:
-        # LAN machine offline, server still alive
         return jsonify({"message": "Data received. LAN machine offline."}), 200
 
 if __name__ == "__main__":
-    # Railway dynamically sets this
-    port = int(os.environ.get("PORT", 5000))  # fallback 5000 for local dev
+    port = int(os.environ.get("PORT", 5000))  # Railway PORT or 5000 locally
     app.run(host="0.0.0.0", port=port)
