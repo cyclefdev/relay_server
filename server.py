@@ -1,42 +1,29 @@
 import os
 from flask import Flask, request, jsonify
-from flask_socketio import SocketIO, emit
-from threading import Thread
+import requests
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Keep track of connected LAN clients
-lan_clients = []
+# Your LAN machine URL (private, local network)
+LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
 
 @app.route("/submit", methods=["POST"])
 def submit():
     data = request.form.to_dict()
-    file_content = None
+    files = {"media": request.files["media"]} if "media" in request.files else None
 
-    if "media" in request.files:
-        media_file = request.files["media"]
-        file_content = media_file.read()
-        filename = media_file.filename or "unknown_file"
-        data["media_filename"] = filename
-
-    # Relay to all connected LAN clients
-    for client in lan_clients:
-        client.emit("data", {"form": data, "media": file_content})
-
-    return jsonify({"message": "Relayed to LAN clients"}), 200
-
-@socketio.on("connect")
-def handle_connect():
-    lan_clients.append(request.namespace)
-    print(f"LAN client connected. Total: {len(lan_clients)}")
-
-@socketio.on("disconnect")
-def handle_disconnect():
-    if request.namespace in lan_clients:
-        lan_clients.remove(request.namespace)
-    print(f"LAN client disconnected. Total: {len(lan_clients)}")
+    try:
+        # Try forwarding to LAN machine
+        resp = requests.post(LAN_MACHINE_URL, data=data, files=files, timeout=2)
+        if resp.status_code == 200:
+            return jsonify({"message": "Relayed to LAN machine successfully"}), 200
+        else:
+            return jsonify({"warning": "LAN relay failed", "status": resp.status_code}), 200
+    except requests.exceptions.RequestException:
+        # LAN offline: do NOT store anything
+        return jsonify({"message": "Data received. LAN machine offline."}), 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    socketio.run(app, host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))  # Railway assigns a port
+    print(f"Relay server starting on port {port}")
+    app.run(host="0.0.0.0", port=port)
