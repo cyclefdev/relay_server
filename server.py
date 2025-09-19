@@ -4,7 +4,6 @@ import requests
 
 app = Flask(__name__)
 
-# LAN machine (optional)
 LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
 
 @app.route("/submit", methods=["POST"])
