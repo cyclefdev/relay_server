@@ -4,6 +4,7 @@ import requests
 
 app = Flask(__name__)
 
+# LAN machine (optional)
 LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
 
 @app.route("/submit", methods=["POST"])
@@ -21,5 +22,7 @@ def submit():
         return jsonify({"message": "Data received. LAN machine offline."}), 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Railway PORT or 5000 locally
+    # LOCAL DEV: 5000, RAILWAY: use dynamic PORT
+    port = int(os.environ.get("PORT", 5000))
+    print(f"Server starting on port {port}")
     app.run(host="0.0.0.0", port=port)
