@@ -1,26 +1,35 @@
+import os
 from flask import Flask, request, jsonify
-from flask_socketio import SocketIO
-import base64
+from flask_socketio import SocketIO, emit
 
+# Create Flask app
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.config["SECRET_KEY"] = "supersecret"  # change if you want
 
-@app.route("/submit", methods=["POST"])
-def submit():
-    phone_id = request.form.get("phone_id")
-    form_data = dict(request.form)
-    form_data.pop("media", None)
+# Initialize SocketIO with eventlet
+socketio = SocketIO(app, cors_allowed_origins="*")  
 
-    payload = {"form": form_data}
+# Simple HTTP route (optional, for testing)
+@app.route("/")
+def index():
+    return jsonify({"status": "ok", "message": "Server is running!"})
 
-    if "media" in request.files:
-        media_file = request.files["media"]
-        payload["media"] = base64.b64encode(media_file.read()).decode("utf-8")
-        payload["media_filename"] = media_file.filename
+# Example WebSocket event
+@socketio.on("connect")
+def handle_connect():
+    print("Client connected")
+    emit("message", {"data": "Welcome! Connected to server."})
 
-    # Emit to connected Linux client
-    socketio.emit("data", payload)
-    return jsonify({"status": "ok"})
+@socketio.on("disconnect")
+def handle_disconnect():
+    print("Client disconnected")
+
+@socketio.on("send_data")
+def handle_send_data(data):
+    print("Received data:", data)
+    emit("data_received", {"status": "success", "data": data}, broadcast=True)
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    # Railway provides the PORT environment variable
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port)
