@@ -1,19 +1,27 @@
-from flask import Flask, request
-from flask_socketio import SocketIO, emit
+import os
+from flask import Flask, request, jsonify
+import requests
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
 
-# App sends -> Relay forwards
-@socketio.on("send_data")
-def handle_send_data(data):
-    client_ip = request.remote_addr
-    print(f"Relaying data from {client_ip}")
-    socketio.emit("send_data", {"ip": client_ip, "payload": data}, broadcast=True)
+# your LAN machine (Linux) endpoint
+LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
 
-@app.route("/")
-def index():
-    return "Relay server running"
+@app.route("/submit", methods=["POST"])
+def submit():
+    data = request.form.to_dict()
+    files = {"media": request.files["media"]} if "media" in request.files else None
+
+    try:
+        resp = requests.post(LAN_MACHINE_URL, data=data, files=files, timeout=2)
+        if resp.status_code == 200:
+            return jsonify({"message": "Relayed to LAN machine successfully"}), 200
+        else:
+            return jsonify({"warning": "LAN relay failed", "status": resp.status_code}), 200
+    except requests.exceptions.RequestException:
+        return jsonify({"message": "Data received. LAN machine offline."}), 200
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))  # Railway gives PORT
+    print(f"Server starting on port {port}")
+    app.run(host="0.0.0.0", port=port)
