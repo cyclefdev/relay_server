@@ -1,56 +1,38 @@
 import socketio
-from flask import Flask, request
+from flask import Flask
 
-# Flask + Socket.IO setup
-sio = socketio.Server(cors_allowed_origins="*")
 app = Flask(__name__)
+sio = socketio.Server(cors_allowed_origins="*")
 app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
 
-# Store phone_id -> session mapping
-clients = {}
+# Relay incoming data directly to all connected clients (like your Linux box)
+@sio.event
+def send_data(sid, data):
+    try:
+        device_id = data.get("device_id")
+        payload = data.get("payload")
+
+        if not device_id or not payload:
+            print("[!] Missing device_id or payload")
+            return
+
+        print(f"[Relay] From device {device_id}: {payload}")
+
+        # Relay to all connected listeners except the sender
+        sio.emit("forward_data", data, skip_sid=sid)
+
+    except Exception as e:
+        print(f"[!] Relay error: {e}")
 
 @sio.event
 def connect(sid, environ):
-    print(f"[+] Phone connected: {sid}")
-
-@sio.event
-def register(sid, data):
-    """Phone sends its ID when connecting"""
-    phone_id = data.get("phone_id")
-    if phone_id:
-        clients[phone_id] = sid
-        print(f"[+] Registered phone_id={phone_id} with sid={sid}")
-        sio.emit("registered", {"status": "ok"}, room=sid)
-
-@sio.event
-def relay_data(sid, data):
-    """Relay incoming phone data to LAN machine"""
-    phone_id = data.get("phone_id")
-    payload = data.get("payload")
-
-    if not phone_id or not payload:
-        return
-
-    print(f"[>] Data from phone {phone_id}: {len(payload)} bytes")
-
-    # Send to all LAN listeners
-    sio.emit("store_data", {"phone_id": phone_id, "payload": payload})
+    print(f"[+] Client connected: {sid}")
 
 @sio.event
 def disconnect(sid):
-    print(f"[-] Disconnected: {sid}")
-    # Remove phone from clients dict
-    for phone_id, s in list(clients.items()):
-        if s == sid:
-            del clients[phone_id]
-            print(f"[-] Removed phone_id={phone_id}")
-
+    print(f"[-] Client disconnected: {sid}")
 
 if __name__ == "__main__":
     import eventlet
     import eventlet.wsgi
-    import sys
-
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
-    print(f"[*] Starting server on port {port}")
-    eventlet.wsgi.server(eventlet.listen(('', port)), app)
+    eventlet.wsgi.server(eventlet.listen(("0.0.0.0", 5000)), app)
