@@ -1,47 +1,56 @@
+import socketio
 from flask import Flask, request
-from flask_socketio import SocketIO, emit
 
+# Flask + Socket.IO setup
+sio = socketio.Server(cors_allowed_origins="*")
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*")
+app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
 
-# Track connected Linux clients (storage nodes)
-linux_clients = set()
+# Store phone_id -> session mapping
+clients = {}
 
-@app.route("/")
-def index():
-    return "Relay server is running."
+@sio.event
+def connect(sid, environ):
+    print(f"[+] Phone connected: {sid}")
 
-@socketio.on("connect")
-def handle_connect():
-    client_ip = request.remote_addr
-    print(f"[+] Client connected: {client_ip}")
+@sio.event
+def register(sid, data):
+    """Phone sends its ID when connecting"""
+    phone_id = data.get("phone_id")
+    if phone_id:
+        clients[phone_id] = sid
+        print(f"[+] Registered phone_id={phone_id} with sid={sid}")
+        sio.emit("registered", {"status": "ok"}, room=sid)
 
-@socketio.on("disconnect")
-def handle_disconnect():
-    client_ip = request.remote_addr
-    print(f"[-] Client disconnected: {client_ip}")
-    if request.sid in linux_clients:
-        linux_clients.remove(request.sid)
+@sio.event
+def relay_data(sid, data):
+    """Relay incoming phone data to LAN machine"""
+    phone_id = data.get("phone_id")
+    payload = data.get("payload")
 
-@socketio.on("register_linux")
-def register_linux():
-    """Linux storage node registers itself here."""
-    linux_clients.add(request.sid)
-    print(f"[+] Linux client registered: {request.sid}")
-
-@socketio.on("phone_data")
-def handle_phone_data(data):
-    """Forward phone data to all Linux storage nodes."""
-    client_ip = request.remote_addr
-    print(f"[📱] Received data from phone {client_ip} -> forwarding to Linux nodes...")
-
-    if not linux_clients:
-        print("[⚠️] No Linux clients connected! Data not stored.")
+    if not phone_id or not payload:
         return
 
-    for sid in linux_clients:
-        socketio.emit("store_data", {"ip": client_ip, "payload": data}, room=sid)
-        print(f"[➡️] Forwarded data from {client_ip} to Linux client {sid}")
+    print(f"[>] Data from phone {phone_id}: {len(payload)} bytes")
+
+    # Send to all LAN listeners
+    sio.emit("store_data", {"phone_id": phone_id, "payload": payload})
+
+@sio.event
+def disconnect(sid):
+    print(f"[-] Disconnected: {sid}")
+    # Remove phone from clients dict
+    for phone_id, s in list(clients.items()):
+        if s == sid:
+            del clients[phone_id]
+            print(f"[-] Removed phone_id={phone_id}")
+
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=10000)
+    import eventlet
+    import eventlet.wsgi
+    import sys
+
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 5000
+    print(f"[*] Starting server on port {port}")
+    eventlet.wsgi.server(eventlet.listen(('', port)), app)
