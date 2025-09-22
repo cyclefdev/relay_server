@@ -1,42 +1,34 @@
-# server.py
-import asyncio
-import websockets
-import json
+import socketio
 
-clients = set()  # Connected Linux clients
+# Replace this with your actual LAN Linux device URL
+LINUX_DEVICE_URL = "http://10.0.2.15:5000/data"
 
-async def handler(websocket, path):
-    # Expect Linux device to identify itself with "type":"receiver"
-    data = await websocket.recv()
+sio = socketio.Client()
+
+@sio.event
+def connect():
+    print("[+] Connected to relay server")
+
+@sio.event
+def disconnect():
+    print("[-] Disconnected from relay server")
+
+# Receive data from app and forward to Linux device
+@sio.on("send_data")
+def handle_data(data):
+    import requests
     try:
-        message = json.loads(data)
-    except:
-        return
+        # Forward data to Linux device
+        requests.post(LINUX_DEVICE_URL, json=data)
+        print(f"[>] Forwarded data from device {data.get('device_id')}")
+    except Exception as e:
+        print(f"[!] Failed to forward data: {e}")
 
-    if message.get("type") == "receiver":
-        clients.add(websocket)
-        print("Receiver connected")
-    else:
-        # Forward message to all receivers
-        disconnected = []
-        for client in clients:
-            try:
-                await client.send(data)
-            except:
-                disconnected.append(client)
-        for d in disconnected:
-            clients.remove(d)
+def main():
+    # This is the public relay server URL
+    RELAY_URL = "https://web-production-57250.up.railway.app/"
+    sio.connect(RELAY_URL, transports=["websocket"])
+    sio.wait()
 
-    try:
-        async for message in websocket:
-            pass
-    finally:
-        if websocket in clients:
-            clients.remove(websocket)
-            print("Receiver disconnected")
-
-start_server = websockets.serve(handler, "0.0.0.0", 8765)
-print("Relay server started on port 8765")
-
-asyncio.get_event_loop().run_until_complete(start_server)
-asyncio.get_event_loop().run_forever()
+if __name__ == "__main__":
+    main()
