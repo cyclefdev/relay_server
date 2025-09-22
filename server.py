@@ -1,46 +1,38 @@
-# server.py
 import socketio
 
-# Standard Socket.IO server
-sio = socketio.Server(async_mode='threading')
+LAN_SERVER = "http://10.0.2.15:6000"  # replace with your LAN IP
+
+# Socket.IO server for clients
+sio = socketio.Server(cors_allowed_origins="*")
 app = socketio.WSGIApp(sio)
 
-# This holds your LAN client connection
-lan_client_sid = None
+# Socket.IO client to LAN
+lan_sio = socketio.Client()
+lan_sio.connect(LAN_SERVER)
+
+print("Relay connected to LAN server")
 
 @sio.event
 def connect(sid, environ):
-    print("Client connected:", sid)
+    print(f"Client connected: {sid}")
 
 @sio.event
 def disconnect(sid):
-    global lan_client_sid
-    print("Client disconnected:", sid)
-    if sid == lan_client_sid:
-        lan_client_sid = None
+    print(f"Client disconnected: {sid}")
 
-# Event from LAN listener to identify itself
-@sio.event
-def lan_hello(sid, data):
-    global lan_client_sid
-    lan_client_sid = sid
-    print("LAN listener connected:", sid)
-
-# Event from client apps
-@sio.event
-def submit(sid, data):
-    if lan_client_sid:
-        # Relay immediately to your LAN listener
-        sio.emit("relay_to_lan", data, room=lan_client_sid)
-        print("Relayed data to LAN listener:", data)
-    else:
-        print("No LAN listener connected, dropping data!")
+@sio.on("client_data")
+def handle_client_data(sid, data):
+    """
+    Receives data from external clients and forwards to LAN server.
+    """
+    print(f"Relaying data from {sid} to LAN")
+    lan_sio.emit("client_data", data)
+    sio.emit("ack", {"status": "relayed"}, room=sid)
 
 if __name__ == "__main__":
     import eventlet
     import eventlet.wsgi
     from flask import Flask
 
-    flask_app = Flask(__name__)
-    # Mount Socket.IO
+    print("Relay server running on 0.0.0.0:5000")
     eventlet.wsgi.server(eventlet.listen(('', 5000)), app)
