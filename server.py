@@ -1,38 +1,31 @@
-import socketio
+# server.py
+from flask import Flask, request
+from flask_socketio import SocketIO, emit
 
-LAN_SERVER = "http://10.0.2.15:6000"  # replace with your LAN IP
+app = Flask(__name__)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Socket.IO server for clients
-sio = socketio.Server(cors_allowed_origins="*")
-app = socketio.WSGIApp(sio)
+# Connected LAN clients (Linux machines)
+lan_clients = []
 
-# Socket.IO client to LAN
-lan_sio = socketio.Client()
-lan_sio.connect(LAN_SERVER)
+@app.route("/submit", methods=["POST"])
+def submit_data():
+    data = request.form.to_dict(flat=False)
+    # Forward to all connected LAN clients
+    for client in lan_clients:
+        client.emit("new_data", data)
+    return {"status": "ok"}, 200
 
-print("Relay connected to LAN server")
+@socketio.on("connect")
+def handle_connect():
+    print(f"LAN client connected: {request.sid}")
+    lan_clients.append(socketio)
 
-@sio.event
-def connect(sid, environ):
-    print(f"Client connected: {sid}")
-
-@sio.event
-def disconnect(sid):
-    print(f"Client disconnected: {sid}")
-
-@sio.on("client_data")
-def handle_client_data(sid, data):
-    """
-    Receives data from external clients and forwards to LAN server.
-    """
-    print(f"Relaying data from {sid} to LAN")
-    lan_sio.emit("client_data", data)
-    sio.emit("ack", {"status": "relayed"}, room=sid)
+@socketio.on("disconnect")
+def handle_disconnect():
+    print(f"LAN client disconnected: {request.sid}")
+    if socketio in lan_clients:
+        lan_clients.remove(socketio)
 
 if __name__ == "__main__":
-    import eventlet
-    import eventlet.wsgi
-    from flask import Flask
-
-    print("Relay server running on 0.0.0.0:5000")
-    eventlet.wsgi.server(eventlet.listen(('', 5000)), app)
+    socketio.run(app, host="0.0.0.0", port=5000)
