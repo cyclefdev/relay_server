@@ -1,27 +1,43 @@
+from flask import Flask, request
 import os
-from flask import Flask, request, jsonify
-import requests
+from datetime import datetime
 
 app = Flask(__name__)
 
-# your LAN machine (Linux) endpoint
-LAN_MACHINE_URL = "http://10.0.2.15:5000/store_data"
+# Base directory where data will be stored
+BASE_DIR = "/home/saad/data"  # Make sure this exists on Linux
 
-@app.route("/submit", methods=["POST"])
-def submit():
-    data = request.form.to_dict()
-    files = {"media": request.files["media"]} if "media" in request.files else None
+os.makedirs(BASE_DIR, exist_ok=True)
 
-    try:
-        resp = requests.post(LAN_MACHINE_URL, data=data, files=files, timeout=2)
-        if resp.status_code == 200:
-            return jsonify({"message": "Relayed to LAN machine successfully"}), 200
-        else:
-            return jsonify({"warning": "LAN relay failed", "status": resp.status_code}), 200
-    except requests.exceptions.RequestException:
-        return jsonify({"message": "Data received. LAN machine offline."}), 200
+@app.route("/store_data", methods=["POST"])
+def store_data():
+    client_ip = request.remote_addr
+    print(f"[{datetime.now()}] Received data from {client_ip}")
+
+    # Create directory for this IP
+    client_dir = os.path.join(BASE_DIR, client_ip.replace(":", "_"))
+    os.makedirs(client_dir, exist_ok=True)
+
+    # Timestamped filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(client_dir, f"data_{timestamp}.txt")
+
+    # Store form data
+    form_data = request.form.to_dict()
+    with open(file_path, "w") as f:
+        for key, value in form_data.items():
+            f.write(f"{key}: {value}\n")
+
+    print(f"[{datetime.now()}] Data stored in {file_path}")
+
+    # Store any uploaded files
+    for filename, file in request.files.items():
+        file_save_path = os.path.join(client_dir, f"{timestamp}_{filename}")
+        file.save(file_save_path)
+        print(f"[{datetime.now()}] File saved: {file_save_path}")
+
+    return "Data received and stored", 200
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Railway gives PORT
-    print(f"Server starting on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
+
