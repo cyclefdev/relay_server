@@ -1,38 +1,42 @@
-import socketio
-from flask import Flask
+# server.py
+import asyncio
+import websockets
+import json
 
-app = Flask(__name__)
-sio = socketio.Server(cors_allowed_origins="*")
-app.wsgi_app = socketio.WSGIApp(sio, app.wsgi_app)
+clients = set()  # Connected Linux clients
 
-# Relay incoming data directly to all connected clients (like your Linux box)
-@sio.event
-def send_data(sid, data):
+async def handler(websocket, path):
+    # Expect Linux device to identify itself with "type":"receiver"
+    data = await websocket.recv()
     try:
-        device_id = data.get("device_id")
-        payload = data.get("payload")
+        message = json.loads(data)
+    except:
+        return
 
-        if not device_id or not payload:
-            print("[!] Missing device_id or payload")
-            return
+    if message.get("type") == "receiver":
+        clients.add(websocket)
+        print("Receiver connected")
+    else:
+        # Forward message to all receivers
+        disconnected = []
+        for client in clients:
+            try:
+                await client.send(data)
+            except:
+                disconnected.append(client)
+        for d in disconnected:
+            clients.remove(d)
 
-        print(f"[Relay] From device {device_id}: {payload}")
+    try:
+        async for message in websocket:
+            pass
+    finally:
+        if websocket in clients:
+            clients.remove(websocket)
+            print("Receiver disconnected")
 
-        # Relay to all connected listeners except the sender
-        sio.emit("forward_data", data, skip_sid=sid)
+start_server = websockets.serve(handler, "0.0.0.0", 8765)
+print("Relay server started on port 8765")
 
-    except Exception as e:
-        print(f"[!] Relay error: {e}")
-
-@sio.event
-def connect(sid, environ):
-    print(f"[+] Client connected: {sid}")
-
-@sio.event
-def disconnect(sid):
-    print(f"[-] Client disconnected: {sid}")
-
-if __name__ == "__main__":
-    import eventlet
-    import eventlet.wsgi
-    eventlet.wsgi.server(eventlet.listen(("0.0.0.0", 5000)), app)
+asyncio.get_event_loop().run_until_complete(start_server)
+asyncio.get_event_loop().run_forever()
