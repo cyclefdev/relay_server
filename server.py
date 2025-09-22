@@ -1,31 +1,33 @@
-# server.py
 from flask import Flask, request
 from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Connected LAN clients (Linux machines)
+# Keep track of connected LAN clients
 lan_clients = []
 
-@app.route("/submit", methods=["POST"])
-def submit_data():
-    data = request.form.to_dict(flat=False)
-    # Forward to all connected LAN clients
-    for client in lan_clients:
-        client.emit("new_data", data)
-    return {"status": "ok"}, 200
-
-@socketio.on("connect")
+@socketio.on('connect')
 def handle_connect():
-    print(f"LAN client connected: {request.sid}")
-    lan_clients.append(socketio)
+    print("LAN client connected")
+    lan_clients.append(request.sid)
 
-@socketio.on("disconnect")
+@socketio.on('disconnect')
 def handle_disconnect():
-    print(f"LAN client disconnected: {request.sid}")
-    if socketio in lan_clients:
-        lan_clients.remove(socketio)
+    print("LAN client disconnected")
+    if request.sid in lan_clients:
+        lan_clients.remove(request.sid)
+
+@app.route('/submit', methods=['POST'])
+def submit():
+    data = request.form.to_dict()
+    files = request.files.to_dict()
+
+    # Forward data to all connected LAN clients
+    for sid in lan_clients:
+        socketio.emit('data', {'form': data, 'files': list(files.keys())}, room=sid)
+
+    return {'status': 'ok'}
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+    socketio.run(app, host='0.0.0.0', port=5000)
